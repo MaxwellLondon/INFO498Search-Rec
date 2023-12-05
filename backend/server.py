@@ -13,7 +13,7 @@ def search():
 
     # Perform the search using PyTerrier
 
-    #Dummy result
+    # Dummy result
     results = [{'docid': '001', 'score': 0.9, 'content': 'Dummy document 1'},
                {'docid': '002', 'score': 0.8, 'content': 'Dummy document 2'}]
 
