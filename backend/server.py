@@ -4,42 +4,42 @@ import pyterrier as pt
 import pandas as pd
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-import operator
+from sklearn.feature_extraction.text import CountVectorizer
+import atexit
 
+df = pd.read_csv("backend/updatedGameQueries.csv")
+print(df)
 app = Flask(__name__)
 CORS(app)
 
-df = pd.read_csv("backend/updatedGameQueries.csv")
-print("Initial columns: ")
-print(df.columns)
-queryMatrix = pd.pivot_table(df, values="searches", index='query', columns="userid")
-print("pivoted columns: ")
-print(queryMatrix.columns)
-queryMatrix = queryMatrix.fillna(0)
+def save_df_to_csv():
+    global df
+    print(df.tail())
+    df.to_csv("./backend.csv", index=False)
+    print("DataFrame saved to CSV")
 
-# Normalize the listen time by adjusting it around the mean for a user
-queryNorm = queryMatrix.apply(lambda x: x - np.nanmean(x), axis=1)
-queryNorm.head()
-item_sim_df = pd.DataFrame(cosine_similarity(queryNorm,queryNorm),index=queryNorm.index,columns=queryNorm.index)
+atexit.register(save_df_to_csv)
+
 
 @app.route('/search', methods=['GET'])
 def search():
     # Get the query from the request parameters
-    query = request.args.get('query', '')
-    queries, scores = recommendations(query)
-    for x, y in zip(queries[:10], scores[:10]):
-        print("{} with similarity of {}".format(x,y))
-    formatted_query_results = [{"query": query, "score": score} for query, score in zip(queries, scores)]
-    print("++++++++++++++++++++++++++++++++++++++++")
-    # Perform the search using PyTerrier
 
+    query = request.args.get('query', '')
+    global df  # Assuming you want to use the global df variable
+    if query not in df['query'].values:
+        # Add a new query row using pd.concat() only if it's not a duplicate
+        new_row = pd.DataFrame({'query': [query]})
+        df = pd.concat([df, new_row], ignore_index=True)
+
+    print(len(df))
+    rec_dict = recommendations(query)
+    # Perform the search using PyTerrier
     if not pt.started():
         pt.init()
 
     index = pt.IndexFactory.of("./backend/polygon_index2")
-
     lm = pt.BatchRetrieve(index, wmodel="Hiemstra_LM")
-
     results_df = lm.transform(query)
 
     # Extract the top 10 results
@@ -57,44 +57,46 @@ def search():
         formatted_results.append(result_dict)
 
     # Format the results and send them to the front-end
-    response = {'query': query, 'results': formatted_results}
+    response = {'query': query, 'results': formatted_results, 'recs': rec_dict}
     
-    return jsonify(response), jsonify(formatted_query_results)
+    return jsonify(response)
 
-def recommendations(queryID):
-    matching_columns = [col for col in item_sim_df.columns if queryID.lower() in col.lower()]
+def recommendations(query):
+    global df
+    # Create a CountVectorizer to convert text data to a matrix of token counts
+    vectorizer = CountVectorizer()
     
-    if not matching_columns:
-        print("{} item not available".format(queryID))
-        return None, None
+    # Fit and transform the stored queries
+    stored_queries_matrix = vectorizer.fit_transform(df['query'])
     
-    # Assuming there could be multiple matching columns, we take the first one
-    query_column = matching_columns[0]
+    # Transform the given query
+    given_query_matrix = vectorizer.transform([query])
 
-    simQueries = item_sim_df.sort_values(by=query_column, ascending=False).index[1:]
-    simScores = item_sim_df.sort_values(by=query_column, ascending=False).loc[:, query_column].tolist()[1:]
-    return simQueries, simScores
+    # Calculate cosine similarity
+    cosine_sim = cosine_similarity(stored_queries_matrix, given_query_matrix)
+
+    # Get the similarity scores for each stored query
+    similarity_scores = cosine_sim.flatten()
+
+    # Add the similarity scores to the DataFrame
+    df['CosineSimilarity'] = similarity_scores
+
+    # Sort the DataFrame based on similarity scores in descending order
+    sorted_df = df.sort_values(by='CosineSimilarity', ascending=False)
+    
+    # Remove rows with identical queries to the search input
+    sorted_df = sorted_df[sorted_df['query'] != query]
+
+    # Extract the top results
+    top_results = sorted_df[['query', 'CosineSimilarity']].head(10)
+  
+    top_results['Rank'] = range(1, len(top_results) + 1)  # Add a new 'Rank' field
+    # Convert the DataFrame to a dictionary
+    top_results_dict = top_results.to_dict(orient='records')
+
+    return top_results_dict
 
   
 if __name__ == '__main__':
     # Run the Flask app on a specific port (e.g., 5000)
     app.run(port=5000, debug=True)
-
-
-
-  
-    # #single out the current user
-    # user = [[14, 222, query, 14]]
-    # userDf = pd.DataFrame(user, columns=['userid', 'query', 'searches'])
-    # #calculate cosine similarity
-    # otherUserDf = queryMatrix[queryMatrix.columns!=222]
-    # similarities = cosine_similarity(userDf, otherUserDf)[0].tolist()
-    # # Create list of indices of these users to get their data quick
-    # indices = otherUserDf.index.tolist()
-    # index_similarity = dict(zip(indices, similarities))
-    # #Sort by similarity
-    # index_similarity_sorted = sorted(index_similarity.items(), key=operator.itemgetter(1))
-    # index_similarity_sorted.reverse() 
-    # # grab top k users
-    # top_users = index_similarity_sorted[:k]
-    # sim_users = [u[0] for u in top_users]

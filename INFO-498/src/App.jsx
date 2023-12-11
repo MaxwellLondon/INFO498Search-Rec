@@ -6,15 +6,20 @@ import { FaFolder, FaSearch } from 'react-icons/fa'; // Import icons
 function App() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]);
+  const [recommendations, setRecommendations] = useState([]);
 
   const handleSearch = async () => {
     try {
       const response = await fetch(`http://127.0.0.1:5000/search?query=${query}`);
       const data = await response.json();
 
-      const docnos = data.results.map(result => result.docno);
+      // Extracting the top 10 results and recommendations from the JSON object
+      const topResults = data.results.slice(0, 10).map(result => result.docno);
+      const topRecommendations = data.recs.slice(0, 10).map(rec => rec.query);
 
-      setResults(docnos);
+      // Setting the results and recommendations in the state
+      setResults(topResults);
+      setRecommendations(topRecommendations);
     } catch (error) {
       console.error('Error fetching search results:', error);
     }
@@ -80,10 +85,32 @@ function App() {
               </table>
             </div>
           )}
+
+          {recommendations.length > 0 && (
+            <div className="recommendations mt-4">
+              <h2>Recommendations:</h2>
+              <table className="table table-bordered table-hover">
+                <thead className="thead-dark">
+                  <tr>
+                    <th scope="col">#</th>
+                    <th scope="col">Recommendation</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recommendations.map((rec, index) => (
+                    <tr key={index}>
+                      <th scope="row">{index + 1}</th>
+                      <td>{rec}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
-}
+};
 
 export default App;
