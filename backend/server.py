@@ -7,7 +7,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 from sklearn.feature_extraction.text import CountVectorizer
 import atexit
 
-df = pd.read_csv("backend/updatedGameQueries.csv")
+df = pd.read_csv("INFO498Search-Rec/backend/updatedGameQueries.csv")
 print(df)
 app = Flask(__name__)
 CORS(app)
